@@ -1,0 +1,11 @@
+[package]
+name = "godot-rc-lsp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tower-lsp = "0.20"
+tokio = { version = "1.47", features = ["full"] }
+tree-sitter = "0.25.8"
+tree-sitter-gdscript = { git = "https://github.com/PrestonKnopp/tree-sitter-gdscript", tag = "v6.0.0" }
+streaming-iterator = "0.1.9"
