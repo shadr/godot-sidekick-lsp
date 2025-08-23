@@ -121,14 +121,26 @@ pub enum SymbolType {
     String,
     Vector3,
 }
+
 impl SymbolType {
-    fn from_name(name: &str) -> SymbolType {
+    pub fn from_name(name: &str) -> SymbolType {
         match name {
             "float" => Self::Float,
             "int" => Self::Int,
             "String" => Self::String,
             "Vector3" => Self::Vector3,
             _ => Self::None,
+        }
+    }
+
+    pub fn type_name(&self) -> &str {
+        match self {
+            SymbolType::None => "none",
+            SymbolType::Unknown => "unknown",
+            SymbolType::Int => "int",
+            SymbolType::Float => "float",
+            SymbolType::String => "String",
+            SymbolType::Vector3 => "Vector3",
         }
     }
 }
@@ -194,10 +206,7 @@ impl SymbolTable {
             "identifier" => self.infer_identifier_type(scope_id, node, file),
             "attribute" => self.infer_attribute_type(scope_id, node, file),
             "call" => self.infer_call_type(scope_id, node, file),
-            kind => {
-                dbg!("infering types not implemented for {}", kind);
-                SymbolType::None
-            }
+            _ => SymbolType::None,
         }
     }
 

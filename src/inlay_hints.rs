@@ -29,7 +29,7 @@ pub fn make_inlay_hints(params: InlayHintParams) -> Vec<InlayHint> {
 
             hints.push(InlayHint {
                 position: symbol.hint_position,
-                label: InlayHintLabel::String(format!(": {:?}", symbol.ttype)),
+                label: InlayHintLabel::String(format!(": {}", symbol.ttype.type_name())),
                 kind: None,
                 text_edits: None,
                 tooltip: None,
