@@ -183,11 +183,37 @@ impl SymbolTable {
                     };
                     self.map.get_mut(&scope_id).unwrap().vars.push(symbol)
                 }
-                "function_definition"
-                | "if_statement"
-                | "elif_clause"
-                | "else_clause"
-                | "for_statement" => {
+                "function_definition" => {
+                    let body_node = child.child_by_field_name("body").unwrap();
+                    self.map.insert(body_node.id(), Scope::new(body, scope_id));
+
+                    if let Some(parameters) = child.child_by_field_name("parameters") {
+                        let function_begins = body_node.start_byte();
+                        for i in 0..parameters.child_count() {
+                            let parameter = parameters.child(i).unwrap();
+                            if parameter.kind() == "typed_parameter" {
+                                let name_node = parameter.child(0).unwrap();
+                                let name = node_content(&name_node, file);
+                                let type_node = parameter.child_by_field_name("type");
+                                let mut ttype = SymbolType::None;
+                                if let Some(type_node) = type_node {
+                                    ttype = SymbolType::from_name(node_content(&type_node, file));
+                                }
+                                let symbol = Symbol {
+                                    name: name.to_string(),
+                                    byte: function_begins,
+                                    hint_position: point_to_position(name_node.end_position()),
+                                    static_typed: true,
+                                    ttype,
+                                };
+                                self.map.get_mut(&body_node.id()).unwrap().vars.push(symbol)
+                            }
+                        }
+                    }
+
+                    self.build_body(body_node, file, body_node.id());
+                }
+                "if_statement" | "elif_clause" | "else_clause" | "for_statement" => {
                     let body_node = child.child_by_field_name("body").unwrap();
                     self.map.insert(body_node.id(), Scope::new(body, scope_id));
                     self.build_body(body_node, file, body_node.id());
@@ -305,7 +331,7 @@ mod tests {
     #[test]
     fn simple() {
         let file = "var b = 10
-func foo():
+func foo(delta: float):
 \tvar c: Vector3 = Vector3.ZERO
 \tvar e = c.normalized()
 \tvar f = max(e.x, 0.0)";
