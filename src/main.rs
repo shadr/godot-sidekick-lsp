@@ -1,6 +1,9 @@
 mod extract_into_function;
+mod inlay_hints;
+mod symbol_table;
 pub mod utils;
 
+use inlay_hints::make_inlay_hints;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -25,6 +28,7 @@ impl LanguageServer for Backend {
         };
         result.capabilities = ServerCapabilities {
             code_action_provider: Some(CodeActionProviderCapability::Options(code_action_options)),
+            inlay_hint_provider: Some(OneOf::Left(true)),
             ..Default::default()
         };
         Ok(result)
@@ -44,6 +48,10 @@ impl LanguageServer for Backend {
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        self.inlay_hints(params)
+    }
 }
 
 impl Backend {
@@ -55,6 +63,11 @@ impl Backend {
         }
 
         actions
+    }
+
+    fn inlay_hints(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let vec = make_inlay_hints(params);
+        Ok(Some(vec))
     }
 }
 

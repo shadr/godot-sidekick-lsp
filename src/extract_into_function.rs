@@ -4,7 +4,7 @@ use streaming_iterator::StreamingIterator;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{Language, Node, Query, QueryCursor, Tree};
 
-use crate::utils::{point_to_position, position_to_point};
+use crate::utils::{node_content, parse_file, point_to_position, position_to_point};
 
 pub fn extract_into_function_action(params: &CodeActionParams) -> Option<CodeActionOrCommand> {
     let file_path = params.text_document.uri.path();
@@ -258,31 +258,20 @@ fn nodes_from_range<'a, 'b>(
     Some(nodes)
 }
 
-fn parse_file(content: &str) -> Option<Tree> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&tree_sitter_gdscript::LANGUAGE.into())
-        .unwrap();
-
-    parser.parse(&content, None)
-}
-
-fn node_content<'s>(node: &Node, file_content: &'s str) -> &'s str {
-    &file_content[node.start_byte()..node.end_byte()]
-}
-
 #[cfg(test)]
 mod tests {
     use tower_lsp::lsp_types::{Position, Range};
 
-    use crate::extract_into_function::{
-        collect_non_declared_variables, collect_top_level_variable_definitions, nodes_from_range,
-        start_end_nodes_from_range,
+    use crate::{
+        extract_into_function::{
+            collect_non_declared_variables, collect_top_level_variable_definitions,
+            nodes_from_range, start_end_nodes_from_range,
+        },
+        utils::node_content,
     };
 
     use super::{
-        collect_used_variables, collect_variable_definitions, node_content, node_from_position,
-        parse_file,
+        collect_used_variables, collect_variable_definitions, node_from_position, parse_file,
     };
 
     #[test]
@@ -331,7 +320,6 @@ mod tests {
         let range = Range::new(Position::new(1, 5), Position::new(2, 6));
         let tree = parse_file(file).unwrap();
         let nodes = nodes_from_range(tree.root_node(), range, file).unwrap();
-        dbg!(&nodes);
         assert_eq!(nodes.len(), 2);
     }
 
