@@ -258,7 +258,15 @@ impl<'a> SymbolTable<'a> {
         // TODO: get local defined methods first
         if let Some(parent) = &self.class_parent {
             let type_string = parent.to_string();
-            self.typedb.get_callable_type(&type_string, name).cloned()
+            let infered_type = self.typedb.get_callable_type(&type_string, name).cloned();
+            if infered_type == Some(SymbolType::Object("Variant".to_string())) {
+                if let Some(arguments) = node.child_by_field_name("arguments") {
+                    if let Some(first_child) = arguments.child(1) {
+                        return self.infer_type(scope_id, first_child, file);
+                    }
+                }
+            }
+            infered_type
         } else {
             None
         }
@@ -274,11 +282,12 @@ mod tests {
     #[test]
     fn simple() {
         let file = "extends CharacterBody2D
-    func foo(delta: float):
-    \tvar a = Input.get_vector()
-    \tvar b = Vector3.ZERO
-    \tvar c = Vector3(1.0, 2.0, 3.0)
-    \tvar d = get_slide_collision_count()";
+func foo(delta: float):
+\tvar a = Input.get_vector()
+\tvar b = Vector3.ZERO
+\tvar c = Vector3(1.0, 2.0, 3.0)
+\tvar d = get_slide_collision_count()
+\tvar e = max(0, 0)";
         let tree = parse_file(file).unwrap();
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
         let mut st = SymbolTable::new(&typedb);
