@@ -51,14 +51,22 @@ impl<'a> SymbolTable<'a> {
 
     pub fn build_table(&mut self, tree: &Tree, file: &str) {
         let root = tree.root_node();
-        self.map.insert(root.id(), Scope::new(root, 0));
-        self.build_body(root, file, root.id());
-        for symbol in &mut self.map.get_mut(&root.id()).unwrap().vars {
+        let new_scope_id = self.insert_new_scope(root, 0);
+        self.build_body(root, file);
+        for symbol in &mut self.map.get_mut(&new_scope_id).unwrap().vars {
             symbol.byte = 0
         }
     }
 
-    pub fn build_body(&mut self, body: Node, file: &str, scope_id: usize) {
+    pub fn insert_new_scope(&mut self, body: Node, parent_scope: usize) -> usize {
+        let new_scope = Scope::new(body, parent_scope);
+        let id = new_scope.id;
+        self.map.insert(id, new_scope);
+        id
+    }
+
+    pub fn build_body(&mut self, body: Node, file: &str) {
+        let current_scope_id = body.id();
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {
             match child.kind() {
@@ -73,7 +81,7 @@ impl<'a> SymbolTable<'a> {
                         ttype = SymbolType::from_str(node_content(&type_node, file)).ok();
                         static_typed = true;
                     } else if let Some(value_node) = value_node {
-                        ttype = self.infer_type(scope_id, value_node, file)
+                        ttype = self.infer_type(current_scope_id, value_node, file)
                     }
                     let symbol = Symbol {
                         name: name.to_string(),
@@ -82,11 +90,15 @@ impl<'a> SymbolTable<'a> {
                         static_typed,
                         ttype,
                     };
-                    self.map.get_mut(&scope_id).unwrap().vars.push(symbol)
+                    self.map
+                        .get_mut(&current_scope_id)
+                        .unwrap()
+                        .vars
+                        .push(symbol)
                 }
                 "function_definition" => {
                     let body_node = child.child_by_field_name("body").unwrap();
-                    self.map.insert(body_node.id(), Scope::new(body, scope_id));
+                    let new_scope_id = self.insert_new_scope(body_node, current_scope_id);
 
                     if let Some(parameters) = child.child_by_field_name("parameters") {
                         let function_begins = body_node.start_byte();
@@ -108,17 +120,31 @@ impl<'a> SymbolTable<'a> {
                                     static_typed: true,
                                     ttype,
                                 };
-                                self.map.get_mut(&body_node.id()).unwrap().vars.push(symbol)
+                                self.map.get_mut(&new_scope_id).unwrap().vars.push(symbol)
                             }
                         }
                     }
 
-                    self.build_body(body_node, file, body_node.id());
+                    self.build_body(body_node, file);
                 }
-                "if_statement" | "elif_clause" | "else_clause" | "for_statement" => {
+                "if_statement" => {
                     let body_node = child.child_by_field_name("body").unwrap();
-                    self.map.insert(body_node.id(), Scope::new(body, scope_id));
-                    self.build_body(body_node, file, body_node.id());
+                    self.insert_new_scope(body_node, current_scope_id);
+                    self.build_body(body_node, file);
+
+                    // process `elif_clause` and `else_clause`, they are exist in `alternative` field of an `if_statement` node
+                    let mut cursor = child.walk();
+                    let alternatives = child.children_by_field_name("alternative", &mut cursor);
+                    for elif_clause in alternatives {
+                        let body_node = elif_clause.child_by_field_name("body").unwrap();
+                        self.insert_new_scope(body_node, current_scope_id);
+                        self.build_body(body_node, file);
+                    }
+                }
+                "elif_clause" | "else_clause" | "for_statement" => {
+                    let body_node = child.child_by_field_name("body").unwrap();
+                    self.insert_new_scope(body_node, current_scope_id);
+                    self.build_body(body_node, file);
                 }
                 "extends_statement" => {
                     let type_node = child.child(1);
@@ -135,7 +161,6 @@ impl<'a> SymbolTable<'a> {
 
     pub fn infer_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let _position = node.start_byte();
-        dbg!(node.to_sexp());
         match node.kind() {
             "integer" => Some(SymbolType::Variant(VariantType::Int)),
             "float" => Some(SymbolType::Variant(VariantType::Float)),
@@ -283,16 +308,14 @@ mod tests {
     fn simple() {
         let file = "extends CharacterBody2D
 func foo(delta: float):
-\tvar a = Input.get_vector()
-\tvar b = Vector3.ZERO
-\tvar c = Vector3(1.0, 2.0, 3.0)
-\tvar d = get_slide_collision_count()
-\tvar e = max(0, 0)";
+\tif false:
+\t\tvar a = 0
+\telse:
+\t\tvar d = 10.0";
         let tree = parse_file(file).unwrap();
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
         let mut st = SymbolTable::new(&typedb);
         st.build_table(&tree, file);
-        dbg!(st.class_parent);
         dbg!(st.map);
         assert!(false);
     }
