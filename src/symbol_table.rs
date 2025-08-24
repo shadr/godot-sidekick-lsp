@@ -5,7 +5,7 @@ use tree_sitter::{Node, Tree};
 
 use crate::{
     typedb::{SymbolType, TypeDatabase, VariantType},
-    utils::{node_content, point_to_position},
+    utils::{node_content, parse_file, point_to_position},
 };
 
 pub struct SymbolTable<'a> {
@@ -135,6 +135,7 @@ impl<'a> SymbolTable<'a> {
 
     pub fn infer_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let _position = node.start_byte();
+        dbg!(node.to_sexp());
         match node.kind() {
             "integer" => Some(SymbolType::Variant(VariantType::Int)),
             "float" => Some(SymbolType::Variant(VariantType::Float)),
@@ -154,14 +155,32 @@ impl<'a> SymbolTable<'a> {
     ) -> Option<SymbolType> {
         let identifier_node = node.child(0).unwrap();
         let name = node_content(&identifier_node, file);
-        let ttype = self.get_symbol_type(scope_id, name, identifier_node.start_byte())?;
-        let type_info = self.typedb.classes.get(&ttype.to_string())?;
+        let is_class;
+        let type_info = if let Some(ttype) =
+            self.get_symbol_type(scope_id, name, identifier_node.start_byte())
+        {
+            is_class = false;
+            self.typedb.classes.get(&ttype.to_string())?
+        } else {
+            is_class = true;
+            self.typedb.classes.get(name)?
+        };
         let attribute_node = node.child(2).unwrap();
         match attribute_node.kind() {
             "identifier" => {
                 let field_name = node_content(&attribute_node, file);
-                let field_info = type_info.properties.get(field_name)?;
-                Some(field_info.ttype.clone())
+                if is_class {
+                    let constant = type_info.constants.get(field_name)?;
+                    // TODO: optimize this, currently we are parsing small value string like "Vector3(0.0, 0.0, 0.0)" using tree-sitter
+                    // each time we want to infer type of constant like Vector3.ZERO
+                    let parsed = parse_file(&constant.value)?;
+                    let expression_statement = parsed.root_node().child(0)?;
+                    let expression = expression_statement.child(0)?;
+                    self.infer_type(0, expression, &constant.value)
+                } else {
+                    let field_info = type_info.properties.get(field_name)?;
+                    Some(field_info.ttype.clone())
+                }
             }
             "attribute_call" => {
                 let method_name_node = attribute_node.child(0).unwrap();
@@ -227,13 +246,21 @@ impl<'a> SymbolTable<'a> {
     fn infer_call_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let name_node = node.child(0).unwrap();
         let name = node_content(&name_node, file);
-        match name {
-            "max" => {
-                let arguments = node.child_by_field_name("arguments")?;
-                let first_child = arguments.child(1)?;
-                self.infer_type(scope_id, first_child, file)
+
+        // If function names is equal to the name of one of the registered classes
+        // then get constructor's return type
+        if let Some(class) = self.typedb.classes.get(name) {
+            if let Some(constructor) = &class.constructor {
+                return Some(constructor.return_type.clone());
             }
-            _ => None,
+        }
+
+        // TODO: get local defined methods first
+        if let Some(parent) = &self.class_parent {
+            let type_string = parent.to_string();
+            self.typedb.get_callable_type(&type_string, name).cloned()
+        } else {
+            None
         }
     }
 }
@@ -247,10 +274,11 @@ mod tests {
     #[test]
     fn simple() {
         let file = "extends CharacterBody2D
-func foo(delta: float):
-\tvar c: Vector3 = Vector3.ZERO
-\tvar e = c.normalized()
-\tvar a = velocity";
+    func foo(delta: float):
+    \tvar a = Input.get_vector()
+    \tvar b = Vector3.ZERO
+    \tvar c = Vector3(1.0, 2.0, 3.0)
+    \tvar d = get_slide_collision_count()";
         let tree = parse_file(file).unwrap();
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
         let mut st = SymbolTable::new(&typedb);

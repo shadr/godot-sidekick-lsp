@@ -24,9 +24,9 @@ pub fn make_inlay_hints(params: InlayHintParams, typedb: &TypeDatabase) -> Vec<I
             let Some(ttype) = &symbol.ttype else {
                 continue;
             };
-            if ttype == &SymbolType::Variant(VariantType::Nil) {
-                continue;
-            }
+            // if ttype == &SymbolType::Variant(VariantType::Nil) {
+            //     continue;
+            // }
             if symbol.static_typed {
                 continue;
             }

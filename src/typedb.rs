@@ -30,6 +30,7 @@ impl TypeDatabase {
                     )
                 })
                 .collect::<HashMap<_, _>>();
+
             let properties = class
                 .properties
                 .into_iter()
@@ -42,12 +43,28 @@ impl TypeDatabase {
                     )
                 })
                 .collect::<HashMap<_, _>>();
+
+            let mut constructor = None;
+            if let Some(constr) = class.constructors.get(0) {
+                constructor = Some(Constructor {
+                    return_type: SymbolType::from_str(&constr.return_type).unwrap(),
+                });
+            }
+
+            let constants = class
+                .constants
+                .into_iter()
+                .map(|c| (c.name, Constant { value: c.value }))
+                .collect::<HashMap<_, _>>();
+
             classes.insert(
                 class_name.clone(),
                 ClassInfo {
                     methods,
                     properties,
                     parent: class.parent,
+                    constructor,
+                    constants,
                 },
             );
         }
@@ -65,6 +82,27 @@ impl TypeDatabase {
         }
         None
     }
+
+    // Get callable return type in specified class or its ancestors or in @GlobalScope
+    pub fn get_callable_type(&self, class: &str, callable: &str) -> Option<&SymbolType> {
+        if let Some(class) = self.classes.get(class) {
+            if let Some(prop) = class.methods.get(callable) {
+                return Some(&prop.return_type);
+            }
+            if let Some(parent_class) = &class.parent {
+                return self.get_callable_type(parent_class, callable);
+            }
+        }
+        if class != "@GlobalScope" {
+            self.get_callable_type("@GlobalScope", callable)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_constant_type(&self, class: &str, const_name: &str) -> Option<SymbolType> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -72,6 +110,13 @@ pub struct ClassInfo {
     pub methods: HashMap<String, MethodInfo>,
     pub properties: HashMap<String, PropertyInfo>,
     pub parent: Option<String>,
+    pub constructor: Option<Constructor>,
+    pub constants: HashMap<String, Constant>,
+}
+
+#[derive(Debug)]
+pub struct Constructor {
+    pub return_type: SymbolType,
 }
 
 #[derive(Debug)]
@@ -84,12 +129,19 @@ pub struct PropertyInfo {
     pub ttype: SymbolType,
 }
 
+#[derive(Debug)]
+pub struct Constant {
+    pub value: String,
+}
+
 #[derive(Deserialize)]
 struct ClassInfoJson {
     name: String,
     methods: Vec<MethodInfoJson>,
     parent: Option<String>,
     properties: Vec<PropertyInfoJson>,
+    constructors: Vec<MethodInfoJson>,
+    constants: Vec<ConstantJson>,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +163,12 @@ struct PropertyInfoJson {
     name: String,
     #[serde(rename = "type")]
     ttype: String,
+}
+
+#[derive(Deserialize)]
+struct ConstantJson {
+    name: String,
+    value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

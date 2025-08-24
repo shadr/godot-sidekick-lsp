@@ -28,11 +28,32 @@ def parse_class(file: str):
         prop_type = prop.attrib["type"]
         properties.append({"name": prop_name, "type": prop_type})
 
+    constructors = []
+    for constr in root.findall("./constructors/constructor"):
+        constr_name = constr.attrib["name"]
+        return_type = constr.find("./return").attrib["type"]
+        parameters = []
+        for param in constr.findall("./param"):
+            parameters.append(
+                {"name": param.attrib["name"], "type": param.attrib["type"]}
+            )
+        constructors.append(
+            {"name": constr_name, "return_type": return_type, "parameters": parameters}
+        )
+
+    consts = []
+    for const in root.findall("./constants/constant"):
+        const_name = const.attrib["name"]
+        const_value = const.attrib["value"]
+        consts.append({"name": const_name, "value": const_value})
+
     output = {
         "name": name,
         "parent": inherits,
         "methods": methods,
         "properties": properties,
+        "constructors": constructors,
+        "constants": consts,
     }
     return output
 
