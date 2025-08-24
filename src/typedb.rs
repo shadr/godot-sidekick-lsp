@@ -13,6 +13,7 @@ impl TypeDatabase {
         let content = std::fs::read_to_string(path).unwrap();
         Self::from_str(&content)
     }
+
     pub fn from_str(content: &str) -> Option<Self> {
         let json: HashMap<String, ClassInfoJson> = serde_json::from_str(&content).unwrap();
         let mut classes = HashMap::new();
@@ -46,10 +47,23 @@ impl TypeDatabase {
                 ClassInfo {
                     methods,
                     properties,
+                    parent: class.parent,
                 },
             );
         }
         Some(Self { classes })
+    }
+
+    pub fn get_symbol_type(&self, class: &str, symbol: &str) -> Option<&SymbolType> {
+        if let Some(class) = self.classes.get(class) {
+            if let Some(prop) = class.properties.get(symbol) {
+                return Some(&prop.ttype);
+            }
+            if let Some(parent_class) = &class.parent {
+                return self.get_symbol_type(parent_class, symbol);
+            }
+        }
+        None
     }
 }
 
@@ -57,6 +71,7 @@ impl TypeDatabase {
 pub struct ClassInfo {
     pub methods: HashMap<String, MethodInfo>,
     pub properties: HashMap<String, PropertyInfo>,
+    pub parent: Option<String>,
 }
 
 #[derive(Debug)]

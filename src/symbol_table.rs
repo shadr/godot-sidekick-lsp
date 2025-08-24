@@ -10,6 +10,7 @@ use crate::{
 
 pub struct SymbolTable<'a> {
     pub map: HashMap<usize, Scope>,
+    class_parent: Option<SymbolType>,
     typedb: &'a TypeDatabase,
 }
 
@@ -21,10 +22,10 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn new(node: Node, parent: usize) -> Self {
+    pub fn new(node: Node, parent_scope: usize) -> Self {
         Self {
             id: node.id(),
-            parent,
+            parent: parent_scope,
             vars: Vec::new(),
         }
     }
@@ -43,6 +44,7 @@ impl<'a> SymbolTable<'a> {
     pub fn new(typedb: &'a TypeDatabase) -> Self {
         Self {
             map: HashMap::new(),
+            class_parent: None,
             typedb,
         }
     }
@@ -118,6 +120,14 @@ impl<'a> SymbolTable<'a> {
                     self.map.insert(body_node.id(), Scope::new(body, scope_id));
                     self.build_body(body_node, file, body_node.id());
                 }
+                "extends_statement" => {
+                    let type_node = child.child(1);
+                    let mut ttype = None;
+                    if let Some(type_node) = type_node {
+                        ttype = SymbolType::from_str(node_content(&type_node, file)).ok();
+                    }
+                    self.class_parent = ttype;
+                }
                 _ => (),
             }
         }
@@ -144,8 +154,7 @@ impl<'a> SymbolTable<'a> {
     ) -> Option<SymbolType> {
         let identifier_node = node.child(0).unwrap();
         let name = node_content(&identifier_node, file);
-        let object_type = self.get_symbol(scope_id, name, identifier_node.start_byte())?;
-        let ttype = object_type.ttype.clone()?;
+        let ttype = self.get_symbol_type(scope_id, name, identifier_node.start_byte())?;
         let type_info = self.typedb.classes.get(&ttype.to_string())?;
         let attribute_node = node.child(2).unwrap();
         match attribute_node.kind() {
@@ -180,17 +189,28 @@ impl<'a> SymbolTable<'a> {
         None
     }
 
-    pub fn get_symbol(&self, scope: usize, symbol: &str, position: usize) -> Option<&Symbol> {
+    pub fn get_symbol_type(
+        &self,
+        scope: usize,
+        symbol: &str,
+        position: usize,
+    ) -> Option<&SymbolType> {
+        if scope == 0 {
+            if let Some(parent) = &self.class_parent {
+                let type_string = parent.to_string();
+                return self.typedb.get_symbol_type(&type_string, symbol);
+            }
+        }
         let scope = self.map.get(&scope)?;
         for var in &scope.vars {
             if var.byte >= position {
                 break;
             }
             if var.name == symbol {
-                return Some(var);
+                return var.ttype.as_ref();
             }
         }
-        self.get_symbol(scope.parent, symbol, position)
+        self.get_symbol_type(scope.parent, symbol, position)
     }
 
     fn infer_identifier_type(
@@ -200,8 +220,8 @@ impl<'a> SymbolTable<'a> {
         file: &str,
     ) -> Option<SymbolType> {
         let name = node_content(&identifier, file);
-        let symbol = self.get_symbol(scope_id, name, identifier.start_byte())?;
-        symbol.ttype.clone()
+        self.get_symbol_type(scope_id, name, identifier.start_byte())
+            .cloned()
     }
 
     fn infer_call_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
@@ -226,13 +246,16 @@ mod tests {
 
     #[test]
     fn simple() {
-        let file = "func foo(delta: float):
+        let file = "extends CharacterBody2D
+func foo(delta: float):
 \tvar c: Vector3 = Vector3.ZERO
-\tvar e = c.normalized()";
+\tvar e = c.normalized()
+\tvar a = velocity";
         let tree = parse_file(file).unwrap();
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
         let mut st = SymbolTable::new(&typedb);
         st.build_table(&tree, file);
+        dbg!(st.class_parent);
         dbg!(st.map);
         assert!(false);
     }
