@@ -1,6 +1,7 @@
 mod extract_into_function;
 mod inlay_hints;
 mod symbol_table;
+mod typedb;
 pub mod utils;
 
 use inlay_hints::make_inlay_hints;
@@ -9,10 +10,11 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use extract_into_function::extract_into_function_action;
+use typedb::TypeDatabase;
 
-#[derive(Debug)]
 struct Backend {
     client: Client,
+    typedb: TypeDatabase,
 }
 
 #[tower_lsp::async_trait]
@@ -66,8 +68,12 @@ impl Backend {
     }
 
     fn inlay_hints(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        let vec = make_inlay_hints(params);
-        Ok(Some(vec))
+        let vec = make_inlay_hints(params, &self.typedb);
+        if vec.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(vec))
+        }
     }
 }
 
@@ -76,6 +82,8 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::new(|client| Backend { client });
+    const type_info: &str = include_str!("../assets/type_info.json");
+    let typedb = TypeDatabase::from_str(type_info).unwrap();
+    let (service, socket) = LspService::new(|client| Backend { client, typedb });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

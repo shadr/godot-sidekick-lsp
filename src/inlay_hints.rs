@@ -1,18 +1,19 @@
 use tower_lsp::lsp_types::*;
 
 use crate::{
-    symbol_table::{SymbolTable, SymbolType},
+    symbol_table::SymbolTable,
+    typedb::{SymbolType, TypeDatabase, VariantType},
     utils::{parse_file, range_contains},
 };
 
-pub fn make_inlay_hints(params: InlayHintParams) -> Vec<InlayHint> {
+pub fn make_inlay_hints(params: InlayHintParams, typedb: &TypeDatabase) -> Vec<InlayHint> {
     let mut hints = Vec::new();
     let range = params.range;
     let path = params.text_document.uri.path();
     let file = std::fs::read_to_string(&path).unwrap();
     let tree = parse_file(&file).unwrap();
 
-    let mut st = SymbolTable::default();
+    let mut st = SymbolTable::new(typedb);
     st.build_table(&tree, &file);
 
     for scope in st.map.values() {
@@ -20,7 +21,10 @@ pub fn make_inlay_hints(params: InlayHintParams) -> Vec<InlayHint> {
             if !range_contains(range, symbol.hint_position) {
                 continue;
             }
-            if symbol.ttype == SymbolType::None || symbol.ttype == SymbolType::Unknown {
+            let Some(ttype) = &symbol.ttype else {
+                continue;
+            };
+            if ttype == &SymbolType::Variant(VariantType::Nil) {
                 continue;
             }
             if symbol.static_typed {
@@ -29,7 +33,7 @@ pub fn make_inlay_hints(params: InlayHintParams) -> Vec<InlayHint> {
 
             hints.push(InlayHint {
                 position: symbol.hint_position,
-                label: InlayHintLabel::String(format!(": {}", symbol.ttype.type_name())),
+                label: InlayHintLabel::String(format!(": {}", ttype.to_string())),
                 kind: None,
                 text_edits: None,
                 tooltip: None,

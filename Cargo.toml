@@ -9,3 +9,8 @@ tokio = { version = "1.47", features = ["full"] }
 tree-sitter = "0.25.8"
 tree-sitter-gdscript = { git = "https://github.com/PrestonKnopp/tree-sitter-gdscript", tag = "v6.0.0" }
 streaming-iterator = "0.1.9"
+num_enum = "0.7.4"
+bitflags = { version = "2.9.3", features = [ "serde" ] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+strum = { version = "0.27.2", features = [ "derive" ] }
