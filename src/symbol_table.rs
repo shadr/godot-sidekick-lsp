@@ -174,7 +174,6 @@ impl<'a> SymbolTable<'a> {
 
     pub fn infer_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let _position = node.start_byte();
-        dbg!(node.kind());
         match node.kind() {
             "integer" => Some(SymbolType::Variant(VariantType::Int)),
             "float" => Some(SymbolType::Variant(VariantType::Float)),

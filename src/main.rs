@@ -1,9 +1,11 @@
 mod extract_into_function;
+mod filedb;
 mod inlay_hints;
 mod symbol_table;
 mod typedb;
 pub mod utils;
 
+use filedb::FileDatabase;
 use inlay_hints::make_inlay_hints;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -15,6 +17,7 @@ use typedb::TypeDatabase;
 struct Backend {
     client: Client,
     typedb: TypeDatabase,
+    filedb: FileDatabase,
 }
 
 #[tower_lsp::async_trait]
@@ -31,6 +34,9 @@ impl LanguageServer for Backend {
         result.capabilities = ServerCapabilities {
             code_action_provider: Some(CodeActionProviderCapability::Options(code_action_options)),
             inlay_hint_provider: Some(OneOf::Left(true)),
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                TextDocumentSyncKind::INCREMENTAL,
+            )),
             ..Default::default()
         };
         Ok(result)
@@ -54,6 +60,22 @@ impl LanguageServer for Backend {
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         self.inlay_hints(params)
     }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        self.did_open(params);
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        self.did_close(params);
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        self.did_change(params);
+    }
+
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        self.did_save(params);
+    }
 }
 
 impl Backend {
@@ -75,6 +97,21 @@ impl Backend {
             Ok(Some(vec))
         }
     }
+
+    fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let file_path = params.text_document.uri.path();
+        self.filedb
+            .file_opened(file_path, params.text_document.text);
+    }
+
+    fn did_close(&self, params: DidCloseTextDocumentParams) {}
+
+    fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let file_path = params.text_document.uri.path();
+        self.filedb.file_changed(file_path, params.content_changes);
+    }
+
+    fn did_save(&self, params: DidSaveTextDocumentParams) {}
 }
 
 #[tokio::main]
@@ -84,6 +121,10 @@ async fn main() {
 
     const TYPE_INFO: &str = include_str!("../assets/type_info.json");
     let typedb = TypeDatabase::from_str(TYPE_INFO).unwrap();
-    let (service, socket) = LspService::new(|client| Backend { client, typedb });
+    let (service, socket) = LspService::new(|client| Backend {
+        client,
+        typedb,
+        filedb: FileDatabase::default(),
+    });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
