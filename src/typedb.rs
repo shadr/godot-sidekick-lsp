@@ -129,6 +129,11 @@ impl TypeDatabase {
         let op = cls.binary_operators.get(&(op.to_string(), rhs));
         op
     }
+
+    pub fn get_unary_operator_type(&self, inner_type_str: &str, op: &str) -> Option<&SymbolType> {
+        let cls = self.classes.get(inner_type_str)?;
+        cls.unary_operators.get(op)
+    }
 }
 
 #[derive(Debug)]

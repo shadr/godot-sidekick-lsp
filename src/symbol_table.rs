@@ -171,6 +171,7 @@ impl<'a> SymbolTable<'a> {
             "parenthesized_expression" => {
                 self.infer_parenthesized_expression_type(scope_id, node, file)
             }
+            "unary_operator" => self.infer_unary_operator_type(scope_id, node, file),
             _ => None,
         }
     }
@@ -315,6 +316,21 @@ impl<'a> SymbolTable<'a> {
         let inner_expression = node.child(1)?;
         self.infer_type(scope_id, inner_expression, file)
     }
+
+    fn infer_unary_operator_type(
+        &self,
+        scope_id: usize,
+        node: Node,
+        file: &str,
+    ) -> Option<SymbolType> {
+        let inner_expression = node.child(1)?;
+        let inner_type = self.infer_type(scope_id, inner_expression, file)?;
+        let inner_type_str = inner_type.to_string();
+        let op = node.child(0)?.kind();
+        self.typedb
+            .get_unary_operator_type(&inner_type_str, op)
+            .cloned()
+    }
 }
 
 #[cfg(test)]
@@ -327,7 +343,8 @@ mod tests {
     fn simple() {
         let file = "extends CharacterBody3D
 func foo(delta: float):
-\tvar sc = get_slide_collision(0)";
+\tvar sc = get_slide_collision(0)
+\tvar n = -sc.get_normal()";
         let tree = parse_file(file).unwrap();
         dbg!(tree.root_node().to_sexp());
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
@@ -338,5 +355,4 @@ func foo(delta: float):
     }
 }
 
-// TODO: @GDScript
-// TODO: operators
+// TODO: @GDScript (range, print functions etc)
