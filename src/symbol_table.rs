@@ -174,9 +174,11 @@ impl<'a> SymbolTable<'a> {
 
     pub fn infer_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let _position = node.start_byte();
+        dbg!(node.kind());
         match node.kind() {
             "integer" => Some(SymbolType::Variant(VariantType::Int)),
             "float" => Some(SymbolType::Variant(VariantType::Float)),
+            "false" | "true" => Some(SymbolType::Variant(VariantType::Bool)),
             "binary_operator" => self.infer_binary_operator_type(scope_id, node, file),
             "identifier" => self.infer_identifier_type(scope_id, node, file),
             "attribute" => self.infer_attribute_type(scope_id, node, file),
@@ -356,13 +358,7 @@ mod tests {
     fn simple() {
         let file = "extends CharacterBody3D
 func foo(delta: float):
-\tvar a = 10
-\tmatch a:
-\t\t1:
-\t\t\tvar b = a
-\t\t1:
-\t\t\tvar b = a
-\t\t\tpass";
+\tvar a = false";
         let tree = parse_file(file).unwrap();
         dbg!(tree.root_node().to_sexp());
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
