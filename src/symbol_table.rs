@@ -8,6 +8,8 @@ use crate::{
     utils::{node_content, parse_file, point_to_position},
 };
 
+// TODO: @GDScript (range, print functions etc)
+
 pub struct SymbolTable<'a> {
     pub map: HashMap<usize, Scope>,
     class_parent: Option<SymbolType>,
@@ -350,23 +352,88 @@ impl<'a> SymbolTable<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{typedb::TypeDatabase, utils::parse_file};
+    use std::sync::LazyLock;
+
+    use tree_sitter::Tree;
+
+    use crate::{
+        typedb::{SymbolType, TypeDatabase, VariantType},
+        utils::parse_file,
+    };
+
+    static TEST_TYPEDB: LazyLock<TypeDatabase> =
+        LazyLock::new(|| TypeDatabase::from_file("./assets/type_info.json").unwrap());
 
     use super::SymbolTable;
 
-    #[test]
-    fn simple() {
-        let file = "extends CharacterBody3D
-func foo(delta: float):
-\tvar a = false";
+    fn test_build_st(file: &str) -> (SymbolTable, Tree) {
         let tree = parse_file(file).unwrap();
         dbg!(tree.root_node().to_sexp());
-        let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
-        let mut st = SymbolTable::new(&typedb);
+        let mut st = SymbolTable::new(&TEST_TYPEDB);
         st.build_table(&tree, file);
-        dbg!(st.map);
-        assert!(false);
+        (st, tree)
+    }
+
+    /// Checks if variable in a function has specific type
+    fn assert_var_type((st, tree): &(SymbolTable, Tree), var_name: &str, ty: SymbolType) {
+        let root = tree.root_node();
+        let mut function_node = root.child(0).unwrap();
+        if function_node.kind() != "function_definition" {
+            function_node = root.child(1).unwrap();
+        }
+        let function_scope_id = function_node.child_by_field_name("body").unwrap().id();
+        let scope = st.map.get(&function_scope_id).unwrap();
+        for var in &scope.vars {
+            if var.name == var_name {
+                assert_eq!(var.ttype, Some(ty.clone()));
+            }
+        }
+    }
+
+    #[test]
+    fn simple_variable_assignments() {
+        let file = "func foo():
+\tvar b = false
+\tvar i = 123
+\tvar f = 42.0
+\tvar s = \"hello\"";
+        let st = test_build_st(file);
+        assert_var_type(&st, "b", SymbolType::Variant(VariantType::Bool));
+        assert_var_type(&st, "i", SymbolType::Variant(VariantType::Int));
+        assert_var_type(&st, "f", SymbolType::Variant(VariantType::Float));
+        assert_var_type(&st, "s", SymbolType::Variant(VariantType::String));
+    }
+
+    #[test]
+    fn assign_constant_from_class() {
+        let file = "func foo():
+\tvar v = Vector3.ZERO";
+        let st = test_build_st(file);
+        assert_var_type(&st, "v", SymbolType::Variant(VariantType::Vector3));
+    }
+
+    #[test]
+    fn assign_result_of_binary_operator() {
+        let file = "func foo():
+\tvar a = 123
+\tvar b = 456
+\tvar r = a + b";
+        let st = test_build_st(file);
+        assert_var_type(&st, "r", SymbolType::Variant(VariantType::Int));
+    }
+
+    #[test]
+    fn assign_field_from_parent_class() {
+        let file = "extends CharacterBody3D
+func foo():
+\tvar one_level = velocity
+\tvar three_level = transform";
+        let st = test_build_st(file);
+        assert_var_type(&st, "one_level", SymbolType::Variant(VariantType::Vector3));
+        assert_var_type(
+            &st,
+            "three_level",
+            SymbolType::Variant(VariantType::Transform3d),
+        );
     }
 }
-
-// TODO: @GDScript (range, print functions etc)

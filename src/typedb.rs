@@ -280,6 +280,7 @@ pub enum VariantType {
     Rect2i = 8,
     Vector3 = 9,
     Vector3i = 10,
+    #[strum(serialize = "Transform2D")]
     Transform2d = 11,
     Vector4 = 12,
     Vector4i = 13,
@@ -287,6 +288,7 @@ pub enum VariantType {
     Quaternion = 15,
     Aabb = 16,
     Basis = 17,
+    #[strum(serialize = "Transform3D")]
     Transform3d = 18,
     Projection = 19,
     Color = 20,
@@ -376,10 +378,34 @@ impl<'de> Deserialize<'de> for PropertyUsage {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
+    use crate::typedb::{SymbolType, VariantType};
+
     use super::TypeDatabase;
+
+    static TEST_TYPEDB: LazyLock<TypeDatabase> =
+        LazyLock::new(|| TypeDatabase::from_file("./assets/type_info.json").unwrap());
 
     #[test]
     fn read_type_info_file() {
         TypeDatabase::from_file("./assets/type_info.json").unwrap();
+    }
+
+    #[test]
+    fn noded_transform_parses_as_varianttype_transformd() {
+        let cls = TEST_TYPEDB.classes.get("Node3D").unwrap();
+        let transform = cls.properties.get("transform").unwrap();
+        assert_eq!(
+            transform.ttype,
+            SymbolType::Variant(VariantType::Transform3d)
+        );
+
+        let cls = TEST_TYPEDB.classes.get("Node2D").unwrap();
+        let transform = cls.properties.get("transform").unwrap();
+        assert_eq!(
+            transform.ttype,
+            SymbolType::Variant(VariantType::Transform2d)
+        );
     }
 }
