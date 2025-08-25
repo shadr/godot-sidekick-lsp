@@ -168,6 +168,9 @@ impl<'a> SymbolTable<'a> {
             "identifier" => self.infer_identifier_type(scope_id, node, file),
             "attribute" => self.infer_attribute_type(scope_id, node, file),
             "call" => self.infer_call_type(scope_id, node, file),
+            "parenthesized_expression" => {
+                self.infer_parenthesized_expression_type(scope_id, node, file)
+            }
             _ => None,
         }
     }
@@ -178,12 +181,16 @@ impl<'a> SymbolTable<'a> {
         node: Node,
         file: &str,
     ) -> Option<SymbolType> {
-        let identifier_node = node.child(0).unwrap();
-        let name = node_content(&identifier_node, file);
+        let lhs_node = node.child(0).unwrap();
+        let name = node_content(&lhs_node, file);
         let is_class;
-        let type_info = if let Some(ttype) =
-            self.get_symbol_type(scope_id, name, identifier_node.start_byte())
-        {
+        let type_info = if lhs_node.kind() == "parenthesized_expression" {
+            // TODO: doesn't support parenthesized class names like "(Input).get_vector..."
+            is_class = false;
+            let paren_expr_type =
+                self.infer_parenthesized_expression_type(scope_id, lhs_node, file)?;
+            self.typedb.classes.get(&paren_expr_type.to_string())?
+        } else if let Some(ttype) = self.get_symbol_type(scope_id, name, lhs_node.start_byte()) {
             is_class = false;
             self.typedb.classes.get(&ttype.to_string())?
         } else {
@@ -225,12 +232,14 @@ impl<'a> SymbolTable<'a> {
     ) -> Option<SymbolType> {
         let left_node = bin_op.child_by_field_name("left").unwrap();
         let right_node = bin_op.child_by_field_name("right").unwrap();
-        let left_type = self.infer_type(scope_id, left_node, file);
-        let right_type = self.infer_type(scope_id, right_node, file);
-        if left_type == right_type {
-            return left_type;
-        }
-        None
+        let left_type = self.infer_type(scope_id, left_node, file)?;
+        let right_type = self.infer_type(scope_id, right_node, file)?;
+        let left_type_str = left_type.to_string();
+        // TODO: should we use `node_content` instead of relying on the fact that kind is equal to operator character ?
+        let op = bin_op.child(1)?.kind();
+        self.typedb
+            .get_binary_operator_type(&left_type_str, op, right_type)
+            .cloned()
     }
 
     pub fn get_symbol_type(
@@ -296,6 +305,16 @@ impl<'a> SymbolTable<'a> {
             None
         }
     }
+
+    fn infer_parenthesized_expression_type(
+        &self,
+        scope_id: usize,
+        node: Node,
+        file: &str,
+    ) -> Option<SymbolType> {
+        let inner_expression = node.child(1)?;
+        self.infer_type(scope_id, inner_expression, file)
+    }
 }
 
 #[cfg(test)]
@@ -306,13 +325,11 @@ mod tests {
 
     #[test]
     fn simple() {
-        let file = "extends CharacterBody2D
+        let file = "extends CharacterBody3D
 func foo(delta: float):
-\tif false:
-\t\tvar a = 0
-\telse:
-\t\tvar d = 10.0";
+\tvar sc = get_slide_collision(0)";
         let tree = parse_file(file).unwrap();
+        dbg!(tree.root_node().to_sexp());
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
         let mut st = SymbolTable::new(&typedb);
         st.build_table(&tree, file);
@@ -320,3 +337,6 @@ func foo(delta: float):
         assert!(false);
     }
 }
+
+// TODO: @GDScript
+// TODO: operators

@@ -57,6 +57,23 @@ impl TypeDatabase {
                 .map(|c| (c.name, Constant { value: c.value }))
                 .collect::<HashMap<_, _>>();
 
+            let binary_operators = class
+                .binary_operators
+                .into_iter()
+                .map(|op| {
+                    (
+                        (op.operator, SymbolType::from_str(&op.rhs_type).unwrap()),
+                        SymbolType::from_str(&op.return_type).unwrap(),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+
+            let unary_operators = class
+                .unary_operators
+                .into_iter()
+                .map(|op| (op.operator, SymbolType::from_str(&op.return_type).unwrap()))
+                .collect::<HashMap<_, _>>();
+
             classes.insert(
                 class_name.clone(),
                 ClassInfo {
@@ -65,6 +82,8 @@ impl TypeDatabase {
                     parent: class.parent,
                     constructor,
                     constants,
+                    binary_operators,
+                    unary_operators,
                 },
             );
         }
@@ -100,8 +119,15 @@ impl TypeDatabase {
         }
     }
 
-    pub fn get_constant_type(&self, class: &str, const_name: &str) -> Option<SymbolType> {
-        todo!()
+    pub fn get_binary_operator_type(
+        &self,
+        class: &str,
+        op: &str,
+        rhs: SymbolType,
+    ) -> Option<&SymbolType> {
+        let cls = self.classes.get(class)?;
+        let op = cls.binary_operators.get(&(op.to_string(), rhs));
+        op
     }
 }
 
@@ -112,6 +138,8 @@ pub struct ClassInfo {
     pub parent: Option<String>,
     pub constructor: Option<Constructor>,
     pub constants: HashMap<String, Constant>,
+    pub binary_operators: HashMap<(String, SymbolType), SymbolType>,
+    pub unary_operators: HashMap<String, SymbolType>,
 }
 
 #[derive(Debug)]
@@ -142,6 +170,21 @@ struct ClassInfoJson {
     properties: Vec<PropertyInfoJson>,
     constructors: Vec<MethodInfoJson>,
     constants: Vec<ConstantJson>,
+    binary_operators: Vec<BinaryOperatorJson>,
+    unary_operators: Vec<UnaryOperatorJson>,
+}
+
+#[derive(Deserialize)]
+struct BinaryOperatorJson {
+    operator: String,
+    rhs_type: String,
+    return_type: String,
+}
+
+#[derive(Deserialize)]
+struct UnaryOperatorJson {
+    operator: String,
+    return_type: String,
 }
 
 #[derive(Deserialize)]
@@ -171,7 +214,7 @@ struct ConstantJson {
     value: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SymbolType {
     Variant(VariantType),
     Array(VariantType),
@@ -211,7 +254,9 @@ impl FromStr for SymbolType {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, IntoPrimitive, FromPrimitive, Clone, Copy, PartialEq, Eq, EnumString, Display)]
+#[derive(
+    Debug, IntoPrimitive, FromPrimitive, Clone, Copy, PartialEq, Eq, EnumString, Display, Hash,
+)]
 #[repr(u8)]
 pub enum VariantType {
     #[num_enum(default)]

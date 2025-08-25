@@ -47,6 +47,31 @@ def parse_class(file: str):
         const_value = const.attrib["value"]
         consts.append({"name": const_name, "value": const_value})
 
+    binary_operators = []
+    unary_operators = []
+    for operator in root.findall("./operators/operator"):
+        op_name: str = (
+            operator.attrib["name"].removeprefix("operator ").removeprefix("unary")
+        )
+        op_return_type = operator.find("return").attrib["type"]
+        op_right_arg = operator.find("param")
+        if op_right_arg is not None:
+            op_right_arg_type = op_right_arg.attrib["type"]
+            binary_operators.append(
+                {
+                    "operator": op_name,
+                    "rhs_type": op_right_arg_type,
+                    "return_type": op_return_type,
+                }
+            )
+        else:
+            unary_operators.append(
+                {
+                    "operator": op_name,
+                    "return_type": op_return_type,
+                }
+            )
+
     output = {
         "name": name,
         "parent": inherits,
@@ -54,6 +79,8 @@ def parse_class(file: str):
         "properties": properties,
         "constructors": constructors,
         "constants": consts,
+        "binary_operators": binary_operators,
+        "unary_operators": unary_operators,
     }
     return output
 
