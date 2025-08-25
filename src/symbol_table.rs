@@ -179,6 +179,7 @@ impl<'a> SymbolTable<'a> {
             "integer" => Some(SymbolType::Variant(VariantType::Int)),
             "float" => Some(SymbolType::Variant(VariantType::Float)),
             "false" | "true" => Some(SymbolType::Variant(VariantType::Bool)),
+            "string" => Some(SymbolType::Variant(VariantType::String)),
             "binary_operator" => self.infer_binary_operator_type(scope_id, node, file),
             "identifier" => self.infer_identifier_type(scope_id, node, file),
             "attribute" => self.infer_attribute_type(scope_id, node, file),
