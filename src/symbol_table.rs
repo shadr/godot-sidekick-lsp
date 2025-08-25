@@ -154,6 +154,19 @@ impl<'a> SymbolTable<'a> {
                     }
                     self.class_parent = ttype;
                 }
+                "match_statement" => {
+                    let Some(match_body) = child.child_by_field_name("body") else {
+                        continue;
+                    };
+                    let mut cursor = match_body.walk();
+                    for pattern_section in match_body.children(&mut cursor) {
+                        let Some(pattern_body) = pattern_section.child_by_field_name("body") else {
+                            continue;
+                        };
+                        self.insert_new_scope(pattern_body, current_scope_id);
+                        self.build_body(pattern_body, file);
+                    }
+                }
                 _ => (),
             }
         }
@@ -343,8 +356,13 @@ mod tests {
     fn simple() {
         let file = "extends CharacterBody3D
 func foo(delta: float):
-\tvar sc = get_slide_collision(0)
-\tvar n = -sc.get_normal()";
+\tvar a = 10
+\tmatch a:
+\t\t1:
+\t\t\tvar b = a
+\t\t1:
+\t\t\tvar b = a
+\t\t\tpass";
         let tree = parse_file(file).unwrap();
         dbg!(tree.root_node().to_sexp());
         let typedb = TypeDatabase::from_file("./assets/type_info.json").unwrap();
