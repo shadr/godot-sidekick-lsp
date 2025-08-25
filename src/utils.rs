@@ -28,6 +28,15 @@ pub fn parse_file(content: &str) -> Option<Tree> {
     parser.parse(content, None)
 }
 
+pub fn reparse_file(content: &str, old_tree: &Tree) -> Option<Tree> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_gdscript::LANGUAGE.into())
+        .unwrap();
+
+    parser.parse(content, Some(old_tree))
+}
+
 pub fn node_content<'s>(node: &Node, file_content: &'s str) -> &'s str {
     &file_content[node.start_byte()..node.end_byte()]
 }

@@ -90,7 +90,12 @@ impl Backend {
     }
 
     fn inlay_hints(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        let vec = make_inlay_hints(params, &self.typedb);
+        let vec = make_inlay_hints(
+            params.range,
+            params.text_document.uri.path(),
+            &self.typedb,
+            &self.filedb,
+        );
         if vec.is_empty() {
             Ok(None)
         } else {

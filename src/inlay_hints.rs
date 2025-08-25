@@ -1,20 +1,25 @@
 use tower_lsp::lsp_types::*;
 
 use crate::{
-    symbol_table::SymbolTable,
-    typedb::TypeDatabase,
-    utils::{parse_file, range_contains},
+    filedb::FileDatabase, symbol_table::SymbolTable, typedb::TypeDatabase, utils::range_contains,
 };
 
-pub fn make_inlay_hints(params: InlayHintParams, typedb: &TypeDatabase) -> Vec<InlayHint> {
+pub fn make_inlay_hints(
+    range: Range,
+    path: &str,
+    typedb: &TypeDatabase,
+    filedb: &FileDatabase,
+) -> Vec<InlayHint> {
     let mut hints = Vec::new();
-    let range = params.range;
-    let path = params.text_document.uri.path();
-    let file = std::fs::read_to_string(path).unwrap();
-    let tree = parse_file(&file).unwrap();
+    let lock = filedb.files.read();
+    let Some(source_file) = lock.get(path) else {
+        return hints;
+    };
+    let file = source_file.content.to_string();
+    let tree = &source_file.tree;
 
     let mut st = SymbolTable::new(typedb);
-    st.build_table(&tree, &file);
+    st.build_table(tree, &file);
 
     for scope in st.map.values() {
         for symbol in &scope.vars {
