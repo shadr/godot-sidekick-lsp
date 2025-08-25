@@ -82,8 +82,8 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    const type_info: &str = include_str!("../assets/type_info.json");
-    let typedb = TypeDatabase::from_str(type_info).unwrap();
+    const TYPE_INFO: &str = include_str!("../assets/type_info.json");
+    let typedb = TypeDatabase::from_str(TYPE_INFO).unwrap();
     let (service, socket) = LspService::new(|client| Backend { client, typedb });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

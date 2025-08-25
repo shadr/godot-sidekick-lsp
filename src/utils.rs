@@ -25,7 +25,7 @@ pub fn parse_file(content: &str) -> Option<Tree> {
         .set_language(&tree_sitter_gdscript::LANGUAGE.into())
         .unwrap();
 
-    parser.parse(&content, None)
+    parser.parse(content, None)
 }
 
 pub fn node_content<'s>(node: &Node, file_content: &'s str) -> &'s str {

@@ -15,7 +15,7 @@ impl TypeDatabase {
     }
 
     pub fn from_str(content: &str) -> Option<Self> {
-        let json: HashMap<String, ClassInfoJson> = serde_json::from_str(&content).unwrap();
+        let json: HashMap<String, ClassInfoJson> = serde_json::from_str(content).unwrap();
         let mut classes = HashMap::new();
         for (class_name, class) in json {
             let methods = class
@@ -44,8 +44,9 @@ impl TypeDatabase {
                 })
                 .collect::<HashMap<_, _>>();
 
+            // TODO: store all constructors when parameter hints is implemented
             let mut constructor = None;
-            if let Some(constr) = class.constructors.get(0) {
+            if let Some(constr) = class.constructors.first() {
                 constructor = Some(Constructor {
                     return_type: SymbolType::from_str(&constr.return_type).unwrap(),
                 });
@@ -126,8 +127,7 @@ impl TypeDatabase {
         rhs: SymbolType,
     ) -> Option<&SymbolType> {
         let cls = self.classes.get(class)?;
-        let op = cls.binary_operators.get(&(op.to_string(), rhs));
-        op
+        cls.binary_operators.get(&(op.to_string(), rhs))
     }
 
     pub fn get_unary_operator_type(&self, inner_type_str: &str, op: &str) -> Option<&SymbolType> {
@@ -231,7 +231,7 @@ impl ToString for SymbolType {
     fn to_string(&self) -> String {
         match self {
             SymbolType::Variant(variant_type) => variant_type.to_string(),
-            SymbolType::Array(variant_type) => format!("{}[]", variant_type.to_string()),
+            SymbolType::Array(variant_type) => format!("{}[]", variant_type),
             SymbolType::Object(name) => name.clone(),
             SymbolType::OjbectArray(el_name) => format!("{}[]", el_name),
         }

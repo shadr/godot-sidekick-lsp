@@ -2,7 +2,7 @@ use tower_lsp::lsp_types::*;
 
 use crate::{
     symbol_table::SymbolTable,
-    typedb::{SymbolType, TypeDatabase, VariantType},
+    typedb::TypeDatabase,
     utils::{parse_file, range_contains},
 };
 
@@ -10,7 +10,7 @@ pub fn make_inlay_hints(params: InlayHintParams, typedb: &TypeDatabase) -> Vec<I
     let mut hints = Vec::new();
     let range = params.range;
     let path = params.text_document.uri.path();
-    let file = std::fs::read_to_string(&path).unwrap();
+    let file = std::fs::read_to_string(path).unwrap();
     let tree = parse_file(&file).unwrap();
 
     let mut st = SymbolTable::new(typedb);

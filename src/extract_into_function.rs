@@ -16,11 +16,8 @@ pub fn extract_into_function_action(params: &CodeActionParams) -> Option<CodeAct
     let file_content = std::fs::read_to_string(file_path).unwrap();
     let tree = parse_file(&file_content).unwrap();
 
-    let Some((start_node, end_node)) =
-        start_end_nodes_from_range(tree.root_node(), range, &file_content)
-    else {
-        return None;
-    };
+    let (start_node, end_node) =
+        start_end_nodes_from_range(tree.root_node(), range, &file_content)?;
 
     let mut start_byte = start_node.start_byte();
     while start_byte > 0 && file_content.as_bytes()[start_byte - 1] != b'\n' {
@@ -174,8 +171,7 @@ fn find_insert_position(start_node: Node<'_>) -> tree_sitter::Point {
     while parent.kind() != "function_definition" {
         parent = parent.parent().unwrap()
     }
-    let insert_pos = parent.end_position();
-    insert_pos
+    parent.end_position()
 }
 
 fn get_first_non_whitespace_position(mut position: Position, file: &str) -> Position {
@@ -196,13 +192,13 @@ fn get_first_non_whitespace_position(mut position: Position, file: &str) -> Posi
             return position;
         }
     }
-    return position;
+    position
 }
 
-fn node_from_position<'a, 'b>(
+fn node_from_position<'b>(
     root_node: Node<'b>,
     mut position: Position,
-    file: &'a str,
+    file: &str,
 ) -> Option<Node<'b>> {
     position = get_first_non_whitespace_position(position, file);
     let mut end_node = root_node
@@ -218,31 +214,21 @@ fn node_from_position<'a, 'b>(
     end_node
 }
 
-fn start_end_nodes_from_range<'a, 'b>(
+fn start_end_nodes_from_range<'b>(
     root_node: Node<'b>,
     mut range: Range,
-    file: &'a str,
+    file: &str,
 ) -> Option<(Node<'b>, Node<'b>)> {
     if range.start.character == 0 && range.end.character == 0 {
         range.end.line -= 1;
     }
-    let Some(start_node) = node_from_position(root_node, range.start, file) else {
-        return None;
-    };
-    let Some(end_node) = node_from_position(root_node, range.end, file) else {
-        return None;
-    };
+    let start_node = node_from_position(root_node, range.start, file)?;
+    let end_node = node_from_position(root_node, range.end, file)?;
     Some((start_node, end_node))
 }
 
-fn nodes_from_range<'a, 'b>(
-    root_node: Node<'b>,
-    range: Range,
-    file: &'a str,
-) -> Option<Vec<Node<'b>>> {
-    let Some((start_node, end_node)) = start_end_nodes_from_range(root_node, range, file) else {
-        return None;
-    };
+fn nodes_from_range<'b>(root_node: Node<'b>, range: Range, file: &str) -> Option<Vec<Node<'b>>> {
+    let (start_node, end_node) = start_end_nodes_from_range(root_node, range, file)?;
     if start_node.parent() != end_node.parent() {
         return None;
     }
