@@ -9,6 +9,7 @@ use std::ops::ControlFlow;
 
 use async_lsp::client_monitor::ClientProcessMonitorLayer;
 use async_lsp::concurrency::ConcurrencyLayer;
+use async_lsp::lsp_types::request::Shutdown;
 use async_lsp::lsp_types::*;
 use async_lsp::panic::CatchUnwindLayer;
 use async_lsp::router::Router;
@@ -70,6 +71,10 @@ impl LanguageServer for Backend {
 
             Ok(Some(actions))
         })
+    }
+
+    fn shutdown(&mut self, _params: ()) -> BoxFuture<'static, Result<(), Self::Error>> {
+        Box::pin(async move { Ok(()) })
     }
 
     // fn initialized(&mut self, _: InitializedParams) {

@@ -41,14 +41,27 @@ impl FileDatabase {
             let Some(range) = change.range else {
                 continue;
             };
+
+            let start_line = file
+                .content
+                .line_to_byte_idx(range.start.line as usize, LineType::LF_CR);
             let start = file
                 .content
-                .line_to_byte_idx(range.start.line as usize, LineType::LF_CR)
-                + range.start.character as usize;
+                .char_indices_at(start_line)
+                .nth(range.start.character as usize)
+                .map(|(b, _)| b)
+                .unwrap();
+
+            let end_line = file
+                .content
+                .line_to_byte_idx(range.end.line as usize, LineType::LF_CR);
             let end = file
                 .content
-                .line_to_byte_idx(range.end.line as usize, LineType::LF_CR)
-                + range.end.character as usize;
+                .char_indices_at(end_line)
+                .nth(range.end.character as usize)
+                .map(|(b, _)| b)
+                .unwrap();
+
             file.content.remove(start..end);
             if !change.text.is_empty() {
                 file.content.insert(start, &change.text);
