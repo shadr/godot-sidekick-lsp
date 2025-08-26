@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use tower_lsp::lsp_types::Position;
+use async_lsp::lsp_types::Position;
 use tree_sitter::{Node, Tree};
 
 use crate::{

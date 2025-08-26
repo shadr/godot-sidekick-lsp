@@ -1,4 +1,4 @@
-use tower_lsp::lsp_types::*;
+use async_lsp::lsp_types::*;
 
 use crate::{
     filedb::FileDatabase, symbol_table::SymbolTable, typedb::TypeDatabase, utils::range_contains,

@@ -1,4 +1,4 @@
-use tower_lsp::lsp_types::{Position, Range};
+use async_lsp::lsp_types::{Position, Range};
 use tree_sitter::{Node, Point, Tree};
 
 pub const fn position_to_point(position: Position) -> Point {

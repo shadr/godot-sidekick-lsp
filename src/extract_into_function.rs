@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
+use async_lsp::lsp_types::*;
 use streaming_iterator::StreamingIterator;
-use tower_lsp::lsp_types::*;
 use tree_sitter::{Language, Node, Query, QueryCursor, Tree};
 
 use crate::utils::{node_content, parse_file, point_to_position, position_to_point};
@@ -57,7 +57,7 @@ pub fn extract_into_function_action(params: &CodeActionParams) -> Option<CodeAct
             changes: None,
             document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
                 text_document: OptionalVersionedTextDocumentIdentifier {
-                    uri: tower_lsp::lsp_types::Url::from_file_path(file_path).unwrap(),
+                    uri: async_lsp::lsp_types::Url::from_file_path(file_path).unwrap(),
                     version: None,
                 },
                 edits: vec![
@@ -246,7 +246,7 @@ fn nodes_from_range<'b>(root_node: Node<'b>, range: Range, file: &str) -> Option
 
 #[cfg(test)]
 mod tests {
-    use tower_lsp::lsp_types::{Position, Range};
+    use async_lsp::lsp_types::{Position, Range};
 
     use crate::{
         extract_into_function::{

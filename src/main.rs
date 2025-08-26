@@ -5,24 +5,39 @@ mod symbol_table;
 mod typedb;
 pub mod utils;
 
+use std::ops::ControlFlow;
+
+use async_lsp::client_monitor::ClientProcessMonitorLayer;
+use async_lsp::concurrency::ConcurrencyLayer;
+use async_lsp::lsp_types::*;
+use async_lsp::panic::CatchUnwindLayer;
+use async_lsp::router::Router;
+use async_lsp::server::LifecycleLayer;
+use async_lsp::tracing::TracingLayer;
+use async_lsp::{ClientSocket, LanguageServer, ResponseError};
 use filedb::FileDatabase;
+use futures::future::BoxFuture;
 use inlay_hints::make_inlay_hints;
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use extract_into_function::extract_into_function_action;
+use tower::ServiceBuilder;
+use tracing::Level;
 use typedb::TypeDatabase;
 
 struct Backend {
-    client: Client,
+    client: ClientSocket,
     typedb: TypeDatabase,
     filedb: FileDatabase,
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    type Error = ResponseError;
+    type NotifyResult = ControlFlow<async_lsp::Result<()>>;
+
+    fn initialize(
+        &mut self,
+        _: InitializeParams,
+    ) -> BoxFuture<'static, Result<InitializeResult, Self::Error>> {
         let mut result = InitializeResult::default();
         let code_action_options = CodeActionOptions {
             code_action_kinds: Some(vec![CodeActionKind::REFACTOR_EXTRACT]),
@@ -39,97 +54,126 @@ impl LanguageServer for Backend {
             )),
             ..Default::default()
         };
-        Ok(result)
+        Box::pin(async move { Ok(result) })
     }
 
-    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
-        let actions = self.code_actions(params);
-        Ok(Some(actions))
+    fn code_action(
+        &mut self,
+        params: CodeActionParams,
+    ) -> BoxFuture<'static, Result<Option<CodeActionResponse>, Self::Error>> {
+        Box::pin(async move {
+            let mut actions = Vec::new();
+
+            if let Some(action) = extract_into_function_action(&params) {
+                actions.push(action);
+            }
+
+            Ok(Some(actions))
+        })
     }
 
-    async fn initialized(&self, _: InitializedParams) {
-        self.client
-            .log_message(MessageType::INFO, "server initialized!")
-            .await;
-    }
+    // fn initialized(&mut self, _: InitializedParams) {
+    //     self.client
+    //         .log_message(MessageType::INFO, "server initialized!")
+    //         .await;
+    // }
 
-    async fn shutdown(&self) -> Result<()> {
-        Ok(())
-    }
-
-    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        self.inlay_hints(params)
-    }
-
-    async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        self.did_open(params);
-    }
-
-    async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        self.did_close(params);
-    }
-
-    async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        self.did_change(params);
-    }
-
-    async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.did_save(params);
-    }
-}
-
-impl Backend {
-    fn code_actions(&self, params: CodeActionParams) -> CodeActionResponse {
-        let mut actions = Vec::new();
-
-        if let Some(action) = extract_into_function_action(&params) {
-            actions.push(action);
-        }
-
-        actions
-    }
-
-    fn inlay_hints(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+    fn inlay_hint(
+        &mut self,
+        params: InlayHintParams,
+    ) -> BoxFuture<'static, Result<Option<Vec<InlayHint>>, Self::Error>> {
         let vec = make_inlay_hints(
             params.range,
             params.text_document.uri.path(),
             &self.typedb,
             &self.filedb,
         );
-        if vec.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(vec))
-        }
+        Box::pin(async move {
+            if vec.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(vec))
+            }
+        })
     }
 
-    fn did_open(&self, params: DidOpenTextDocumentParams) {
+    fn did_open(
+        &mut self,
+        params: DidOpenTextDocumentParams,
+    ) -> ControlFlow<Result<(), async_lsp::Error>> {
         let file_path = params.text_document.uri.path();
         self.filedb
             .file_opened(file_path, params.text_document.text);
+        ControlFlow::Continue(())
     }
 
-    fn did_close(&self, params: DidCloseTextDocumentParams) {}
+    fn did_close(
+        &mut self,
+        _params: DidCloseTextDocumentParams,
+    ) -> ControlFlow<Result<(), async_lsp::Error>> {
+        ControlFlow::Continue(())
+    }
 
-    fn did_change(&self, params: DidChangeTextDocumentParams) {
+    fn did_change(
+        &mut self,
+        params: DidChangeTextDocumentParams,
+    ) -> ControlFlow<Result<(), async_lsp::Error>> {
         let file_path = params.text_document.uri.path();
         self.filedb.file_changed(file_path, params.content_changes);
+        ControlFlow::Continue(())
     }
 
-    fn did_save(&self, params: DidSaveTextDocumentParams) {}
+    fn did_save(
+        &mut self,
+        _params: DidSaveTextDocumentParams,
+    ) -> ControlFlow<Result<(), async_lsp::Error>> {
+        ControlFlow::Continue(())
+    }
+}
+
+impl Backend {
+    fn new_router(client: ClientSocket) -> Router<Self> {
+        const TYPE_INFO: &str = include_str!("../assets/type_info.json");
+        let typedb = TypeDatabase::from_str(TYPE_INFO).unwrap();
+
+        Router::from_language_server(Self {
+            client,
+            typedb,
+            filedb: FileDatabase::default(),
+        })
+    }
 }
 
 #[tokio::main]
 async fn main() {
-    let stdin = tokio::io::stdin();
-    let stdout = tokio::io::stdout();
-
-    const TYPE_INFO: &str = include_str!("../assets/type_info.json");
-    let typedb = TypeDatabase::from_str(TYPE_INFO).unwrap();
-    let (service, socket) = LspService::new(|client| Backend {
-        client,
-        typedb,
-        filedb: FileDatabase::default(),
+    let (server, _) = async_lsp::MainLoop::new_server(|client| {
+        ServiceBuilder::new()
+            .layer(TracingLayer::default())
+            .layer(LifecycleLayer::default())
+            .layer(CatchUnwindLayer::default())
+            .layer(ConcurrencyLayer::default())
+            .layer(ClientProcessMonitorLayer::new(client.clone()))
+            .service(Backend::new_router(client))
     });
-    Server::new(stdin, stdout, socket).serve(service).await;
+
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .with_ansi(false)
+        .with_writer(std::io::stderr)
+        .init();
+
+    // Prefer truly asynchronous piped stdin/stdout without blocking tasks.
+    #[cfg(unix)]
+    let (stdin, stdout) = (
+        async_lsp::stdio::PipeStdin::lock_tokio().unwrap(),
+        async_lsp::stdio::PipeStdout::lock_tokio().unwrap(),
+    );
+    // Fallback to spawn blocking read/write otherwise.
+    #[cfg(not(unix))]
+    let (stdin, stdout) = (
+        tokio_util::compat::TokioAsyncReadCompatExt::compat(tokio::io::stdin()),
+        tokio_util::compat::TokioAsyncWriteCompatExt::compat_write(tokio::io::stdout()),
+    );
+
+    server.run_buffered(stdin, stdout).await.unwrap();
 }

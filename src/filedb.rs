@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
+use async_lsp::lsp_types::TextDocumentContentChangeEvent;
 use parking_lot::RwLock;
 use ropey::{LineType, Rope};
-use tower_lsp::lsp_types::TextDocumentContentChangeEvent;
 use tree_sitter::{Point, Tree};
 
 use crate::utils::{parse_file, position_to_point, reparse_file};
