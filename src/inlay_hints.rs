@@ -26,26 +26,40 @@ pub fn make_inlay_hints(
             if !range_contains(range, symbol.hint_position) {
                 continue;
             }
-            let Some(ttype) = &symbol.ttype else {
-                continue;
-            };
-            // if ttype == &SymbolType::Variant(VariantType::Nil) {
-            //     continue;
-            // }
-            if symbol.static_typed {
-                continue;
-            }
+            match symbol.kind {
+                InlayHintKind::PARAMETER => {
+                    hints.push(InlayHint {
+                        position: symbol.hint_position,
+                        label: InlayHintLabel::String(format!("{}: ", symbol.name)),
+                        kind: Some(InlayHintKind::PARAMETER),
+                        text_edits: None,
+                        tooltip: None,
+                        padding_left: None,
+                        padding_right: None,
+                        data: None,
+                    });
+                }
+                InlayHintKind::TYPE => {
+                    let Some(ttype) = &symbol.ttype else {
+                        continue;
+                    };
+                    if symbol.static_typed {
+                        continue;
+                    }
 
-            hints.push(InlayHint {
-                position: symbol.hint_position,
-                label: InlayHintLabel::String(format!(": {}", ttype.to_string())),
-                kind: None,
-                text_edits: None,
-                tooltip: None,
-                padding_left: None,
-                padding_right: None,
-                data: None,
-            });
+                    hints.push(InlayHint {
+                        position: symbol.hint_position,
+                        label: InlayHintLabel::String(format!(": {}", ttype.to_string())),
+                        kind: Some(InlayHintKind::TYPE),
+                        text_edits: None,
+                        tooltip: None,
+                        padding_left: None,
+                        padding_right: None,
+                        data: None,
+                    });
+                }
+                _ => (),
+            }
         }
     }
 

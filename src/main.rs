@@ -9,7 +9,6 @@ use std::ops::ControlFlow;
 
 use async_lsp::client_monitor::ClientProcessMonitorLayer;
 use async_lsp::concurrency::ConcurrencyLayer;
-use async_lsp::lsp_types::request::Shutdown;
 use async_lsp::lsp_types::*;
 use async_lsp::panic::CatchUnwindLayer;
 use async_lsp::router::Router;

@@ -1,10 +1,10 @@
 use std::{collections::HashMap, str::FromStr};
 
-use async_lsp::lsp_types::Position;
+use async_lsp::lsp_types::{InlayHintKind, Position};
 use tree_sitter::{Node, Tree};
 
 use crate::{
-    typedb::{SymbolType, TypeDatabase, VariantType},
+    typedb::{MethodInfo, SymbolType, TypeDatabase, VariantType},
     utils::{node_content, parse_file, point_to_position},
 };
 
@@ -40,6 +40,7 @@ pub struct Symbol {
     pub hint_position: Position,
     pub static_typed: bool,
     pub ttype: Option<SymbolType>,
+    pub kind: InlayHintKind,
 }
 
 impl<'a> SymbolTable<'a> {
@@ -91,6 +92,7 @@ impl<'a> SymbolTable<'a> {
                         hint_position: point_to_position(name_node.end_position()),
                         static_typed,
                         ttype,
+                        kind: InlayHintKind::TYPE,
                     };
                     self.map
                         .get_mut(&current_scope_id)
@@ -121,6 +123,7 @@ impl<'a> SymbolTable<'a> {
                                     hint_position: point_to_position(name_node.end_position()),
                                     static_typed: true,
                                     ttype,
+                                    kind: InlayHintKind::TYPE,
                                 };
                                 self.map.get_mut(&new_scope_id).unwrap().vars.push(symbol)
                             }
@@ -169,12 +172,18 @@ impl<'a> SymbolTable<'a> {
                         self.build_body(pattern_body, file);
                     }
                 }
+                "expression_statement" => {
+                    let Some(inner) = child.child(0) else {
+                        continue;
+                    };
+                    self.infer_type(current_scope_id, inner, file);
+                }
                 _ => (),
             }
         }
     }
 
-    pub fn infer_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
+    pub fn infer_type(&mut self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let _position = node.start_byte();
         match node.kind() {
             "integer" => Some(SymbolType::Variant(VariantType::Int)),
@@ -194,7 +203,7 @@ impl<'a> SymbolTable<'a> {
     }
 
     pub fn infer_attribute_type(
-        &self,
+        &mut self,
         scope_id: usize,
         node: Node,
         file: &str,
@@ -243,7 +252,7 @@ impl<'a> SymbolTable<'a> {
     }
 
     pub fn infer_binary_operator_type(
-        &self,
+        &mut self,
         scope_id: usize,
         bin_op: Node,
         file: &str,
@@ -285,7 +294,7 @@ impl<'a> SymbolTable<'a> {
     }
 
     fn infer_identifier_type(
-        &self,
+        &mut self,
         scope_id: usize,
         identifier: Node,
         file: &str,
@@ -295,14 +304,23 @@ impl<'a> SymbolTable<'a> {
             .cloned()
     }
 
-    fn infer_call_type(&self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
+    fn infer_call_type(&mut self, scope_id: usize, node: Node, file: &str) -> Option<SymbolType> {
         let name_node = node.child(0).unwrap();
         let name = node_content(&name_node, file);
 
         // If function names is equal to the name of one of the registered classes
         // then get constructor's return type
         if let Some(class) = self.typedb.classes.get(name) {
-            if let Some(constructor) = &class.constructor {
+            if let Some(arguments) = node.child_by_field_name("arguments") {
+                let argument_types = arguments
+                    .named_children(&mut arguments.walk())
+                    .map(|arg| self.infer_type(scope_id, arg, file))
+                    .collect::<Vec<_>>();
+                if let Some(constructor) = &class.find_constructor(&argument_types) {
+                    self.add_parameter_hints(scope_id, arguments, constructor);
+                    return Some(constructor.return_type.clone());
+                }
+            } else if let Some(constructor) = &class.find_constructor(&[]) {
                 return Some(constructor.return_type.clone());
             }
         }
@@ -310,22 +328,49 @@ impl<'a> SymbolTable<'a> {
         // TODO: get local defined methods first
         if let Some(parent) = &self.class_parent {
             let type_string = parent.to_string();
-            let infered_type = self.typedb.get_callable_type(&type_string, name).cloned();
-            if infered_type == Some(SymbolType::Object("Variant".to_string())) {
+            let callable = self.typedb.get_callable(&type_string, name);
+            if let Some(callable) = callable {
                 if let Some(arguments) = node.child_by_field_name("arguments") {
-                    if let Some(first_child) = arguments.child(1) {
-                        return self.infer_type(scope_id, first_child, file);
+                    self.add_parameter_hints(scope_id, arguments, callable);
+                }
+
+                let infered_type = &callable.return_type;
+                if infered_type == &SymbolType::Object("Variant".to_string()) {
+                    if let Some(arguments) = node.child_by_field_name("arguments") {
+                        if let Some(first_child) = arguments.child(1) {
+                            return self.infer_type(scope_id, first_child, file);
+                        }
                     }
                 }
+                Some(infered_type.clone())
+            } else {
+                None
             }
-            infered_type
         } else {
             None
         }
     }
 
+    fn add_parameter_hints(&mut self, scope_id: usize, arguments: Node, method: &MethodInfo) {
+        for (arg_node, param) in arguments
+            .named_children(&mut arguments.walk())
+            .zip(method.parameters.iter())
+        {
+            let position = point_to_position(arg_node.start_position());
+            let symbol = Symbol {
+                name: param.name.clone(),
+                byte: arguments.end_byte(),
+                hint_position: position,
+                static_typed: false,
+                ttype: None,
+                kind: InlayHintKind::PARAMETER,
+            };
+            self.map.get_mut(&scope_id).unwrap().vars.push(symbol);
+        }
+    }
+
     fn infer_parenthesized_expression_type(
-        &self,
+        &mut self,
         scope_id: usize,
         node: Node,
         file: &str,
@@ -335,7 +380,7 @@ impl<'a> SymbolTable<'a> {
     }
 
     fn infer_unary_operator_type(
-        &self,
+        &mut self,
         scope_id: usize,
         node: Node,
         file: &str,

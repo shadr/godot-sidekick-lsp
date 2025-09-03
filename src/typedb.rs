@@ -26,6 +26,14 @@ impl TypeDatabase {
                         m.name,
                         MethodInfo {
                             return_type: SymbolType::from_str(&m.return_type).unwrap(),
+                            parameters: m
+                                .parameters
+                                .into_iter()
+                                .map(|param| MethodParameter {
+                                    name: param.name,
+                                    ttype: SymbolType::from_str(&param.ttype).unwrap(),
+                                })
+                                .collect(),
                         },
                     )
                 })
@@ -44,13 +52,21 @@ impl TypeDatabase {
                 })
                 .collect::<HashMap<_, _>>();
 
-            // TODO: store all constructors when parameter hints is implemented
-            let mut constructor = None;
-            if let Some(constr) = class.constructors.first() {
-                constructor = Some(Constructor {
+            let constructors = class
+                .constructors
+                .into_iter()
+                .map(|constr| Constructor {
                     return_type: SymbolType::from_str(&constr.return_type).unwrap(),
-                });
-            }
+                    parameters: constr
+                        .parameters
+                        .iter()
+                        .map(|param| MethodParameter {
+                            name: param.name.clone(),
+                            ttype: SymbolType::from_str(&param.ttype).unwrap(),
+                        })
+                        .collect(),
+                })
+                .collect::<Vec<_>>();
 
             let constants = class
                 .constants
@@ -81,7 +97,7 @@ impl TypeDatabase {
                     methods,
                     properties,
                     parent: class.parent,
-                    constructor,
+                    constructors,
                     constants,
                     binary_operators,
                     unary_operators,
@@ -103,21 +119,26 @@ impl TypeDatabase {
         None
     }
 
-    // Get callable return type in specified class or its ancestors or in @GlobalScope
-    pub fn get_callable_type(&self, class: &str, callable: &str) -> Option<&SymbolType> {
+    pub fn get_callable(&self, class: &str, callable: &str) -> Option<&MethodInfo> {
         if let Some(class) = self.classes.get(class) {
             if let Some(prop) = class.methods.get(callable) {
-                return Some(&prop.return_type);
+                return Some(prop);
             }
             if let Some(parent_class) = &class.parent {
-                return self.get_callable_type(parent_class, callable);
+                return self.get_callable(parent_class, callable);
             }
         }
         if class != "@GlobalScope" {
-            self.get_callable_type("@GlobalScope", callable)
+            self.get_callable("@GlobalScope", callable)
         } else {
             None
         }
+    }
+
+    // Get callable return type in specified class or its ancestors or in @GlobalScope
+    pub fn get_callable_type(&self, class: &str, callable: &str) -> Option<&SymbolType> {
+        self.get_callable(class, callable)
+            .map(|method| &method.return_type)
     }
 
     pub fn get_binary_operator_type(
@@ -141,20 +162,42 @@ pub struct ClassInfo {
     pub methods: HashMap<String, MethodInfo>,
     pub properties: HashMap<String, PropertyInfo>,
     pub parent: Option<String>,
-    pub constructor: Option<Constructor>,
+    pub constructors: Vec<Constructor>,
     pub constants: HashMap<String, Constant>,
     pub binary_operators: HashMap<(String, SymbolType), SymbolType>,
     pub unary_operators: HashMap<String, SymbolType>,
 }
 
-#[derive(Debug)]
-pub struct Constructor {
-    pub return_type: SymbolType,
+impl ClassInfo {
+    pub fn find_constructor(&self, argument_types: &[Option<SymbolType>]) -> Option<&MethodInfo> {
+        'outer: for constr in &self.constructors {
+            if constr.parameters.len() != argument_types.len() {
+                continue;
+            }
+            for (param, arg_type) in constr.parameters.iter().zip(argument_types.iter()) {
+                let Some(arg_type) = arg_type else { continue };
+                if !arg_type.fuzzy_equal(&param.ttype) {
+                    continue 'outer;
+                }
+            }
+            return Some(constr);
+        }
+        None
+    }
 }
+
+pub type Constructor = MethodInfo;
 
 #[derive(Debug)]
 pub struct MethodInfo {
     pub return_type: SymbolType,
+    pub parameters: Vec<MethodParameter>,
+}
+
+#[derive(Debug)]
+pub struct MethodParameter {
+    pub name: String,
+    pub ttype: SymbolType,
 }
 
 #[derive(Debug)]
@@ -225,6 +268,18 @@ pub enum SymbolType {
     Array(VariantType),
     Object(String),
     OjbectArray(String),
+}
+
+impl SymbolType {
+    pub fn fuzzy_equal(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SymbolType::Variant(VariantType::Float), SymbolType::Variant(VariantType::Int))
+            | (SymbolType::Variant(VariantType::Int), SymbolType::Variant(VariantType::Float)) => {
+                true
+            }
+            _ => self == other,
+        }
+    }
 }
 
 impl ToString for SymbolType {
