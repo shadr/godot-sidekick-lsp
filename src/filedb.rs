@@ -42,25 +42,19 @@ impl FileDatabase {
                 continue;
             };
 
-            let start_line = file
+            let start_line_byte_idx = file
                 .content
                 .line_to_byte_idx(range.start.line as usize, LineType::LF_CR);
-            let start = file
-                .content
-                .char_indices_at(start_line)
-                .nth(range.start.character as usize)
-                .map(|(b, _)| b)
-                .unwrap();
+            let start_line_char_idx = file.content.byte_to_char_idx(start_line_byte_idx);
+            let start_char_idx = start_line_char_idx + range.start.character as usize;
+            let start = file.content.char_to_byte_idx(start_char_idx);
 
-            let end_line = file
+            let end_line_byte_idx = file
                 .content
                 .line_to_byte_idx(range.end.line as usize, LineType::LF_CR);
-            let end = file
-                .content
-                .char_indices_at(end_line)
-                .nth(range.end.character as usize)
-                .map(|(b, _)| b)
-                .unwrap();
+            let end_line_char_idx = file.content.byte_to_char_idx(end_line_byte_idx);
+            let end_char_idx = end_line_char_idx + range.end.character as usize;
+            let end = file.content.char_to_byte_idx(end_char_idx);
 
             file.content.remove(start..end);
             if !change.text.is_empty() {
