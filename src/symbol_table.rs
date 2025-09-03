@@ -245,6 +245,9 @@ impl<'a> SymbolTable<'a> {
                 let method_name_node = attribute_node.child(0).unwrap();
                 let method_name = node_content(&method_name_node, file);
                 let method_info = type_info.methods.get(method_name)?;
+                if let Some(arguments) = attribute_node.child_by_field_name("arguments") {
+                    self.add_parameter_hints(scope_id, arguments, method_info);
+                }
                 Some(method_info.return_type.clone())
             }
             _ => unreachable!(),
