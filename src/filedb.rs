@@ -14,7 +14,7 @@ pub struct FileDatabase {
 
 impl FileDatabase {
     pub fn file_opened(&self, file_path: &str, file_content: String) {
-        let s = file_content.to_string();
+        let s = file_content;
         let Some(tree) = parse_file(&s) else {
             return;
         };

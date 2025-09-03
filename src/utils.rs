@@ -41,7 +41,7 @@ pub fn node_content<'s>(node: &Node, file_content: &'s str) -> &'s str {
     &file_content[node.start_byte()..node.end_byte()]
 }
 
-pub fn range_contains(range: Range, position: Position) -> bool {
+pub const fn range_contains(range: Range, position: Position) -> bool {
     (range.start.line < position.line && range.end.line > position.line)
         || (range.start.line == position.line && range.start.character <= position.character)
         || (range.end.line == position.line && range.end.character >= position.character)

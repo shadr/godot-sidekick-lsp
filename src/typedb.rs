@@ -273,10 +273,8 @@ pub enum SymbolType {
 impl SymbolType {
     pub fn fuzzy_equal(&self, other: &Self) -> bool {
         match (self, other) {
-            (SymbolType::Variant(VariantType::Float), SymbolType::Variant(VariantType::Int))
-            | (SymbolType::Variant(VariantType::Int), SymbolType::Variant(VariantType::Float)) => {
-                true
-            }
+            (Self::Variant(VariantType::Float), Self::Variant(VariantType::Int))
+            | (Self::Variant(VariantType::Int), Self::Variant(VariantType::Float)) => true,
             _ => self == other,
         }
     }
@@ -285,10 +283,10 @@ impl SymbolType {
 impl ToString for SymbolType {
     fn to_string(&self) -> String {
         match self {
-            SymbolType::Variant(variant_type) => variant_type.to_string(),
-            SymbolType::Array(variant_type) => format!("{}[]", variant_type),
-            SymbolType::Object(name) => name.clone(),
-            SymbolType::OjbectArray(el_name) => format!("{}[]", el_name),
+            Self::Variant(variant_type) => variant_type.to_string(),
+            Self::Array(variant_type) => format!("{}[]", variant_type),
+            Self::Object(name) => name.clone(),
+            Self::OjbectArray(el_name) => format!("{}[]", el_name),
         }
     }
 }

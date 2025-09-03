@@ -297,7 +297,7 @@ impl<'a> SymbolTable<'a> {
     }
 
     fn infer_identifier_type(
-        &mut self,
+        &self,
         scope_id: usize,
         identifier: Node,
         file: &str,
