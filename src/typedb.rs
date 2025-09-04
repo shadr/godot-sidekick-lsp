@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 pub struct TypeDatabase {
-    pub classes: HashMap<String, ClassInfo>,
+    pub classes: HashMap<SymbolType, ClassInfo>,
 }
 
 impl TypeDatabase {
@@ -16,7 +16,9 @@ impl TypeDatabase {
 
     pub fn from_str(content: &str) -> Option<Self> {
         let json: HashMap<String, ClassInfoJson> = serde_json::from_str(content).unwrap();
-        let mut classes = HashMap::new();
+        let mut db = Self {
+            classes: HashMap::default(),
+        };
         for (class_name, class) in json {
             let methods = class
                 .methods
@@ -25,13 +27,13 @@ impl TypeDatabase {
                     (
                         m.name,
                         MethodInfo {
-                            return_type: SymbolType::from_str(&m.return_type).unwrap(),
+                            return_type: SymbolType::from_str(&m.return_type),
                             parameters: m
                                 .parameters
                                 .into_iter()
                                 .map(|param| MethodParameter {
                                     name: param.name,
-                                    ttype: SymbolType::from_str(&param.ttype).unwrap(),
+                                    ttype: SymbolType::from_str(&param.ttype),
                                 })
                                 .collect(),
                         },
@@ -46,7 +48,7 @@ impl TypeDatabase {
                     (
                         m.name,
                         PropertyInfo {
-                            ttype: SymbolType::from_str(&m.ttype).unwrap(),
+                            ttype: SymbolType::from_str(&m.ttype),
                         },
                     )
                 })
@@ -56,13 +58,13 @@ impl TypeDatabase {
                 .constructors
                 .into_iter()
                 .map(|constr| Constructor {
-                    return_type: SymbolType::from_str(&constr.return_type).unwrap(),
+                    return_type: SymbolType::from_str(&constr.return_type),
                     parameters: constr
                         .parameters
                         .iter()
                         .map(|param| MethodParameter {
                             name: param.name.clone(),
-                            ttype: SymbolType::from_str(&param.ttype).unwrap(),
+                            ttype: SymbolType::from_str(&param.ttype),
                         })
                         .collect(),
                 })
@@ -79,8 +81,8 @@ impl TypeDatabase {
                 .into_iter()
                 .map(|op| {
                     (
-                        (op.operator, SymbolType::from_str(&op.rhs_type).unwrap()),
-                        SymbolType::from_str(&op.return_type).unwrap(),
+                        (op.operator, SymbolType::from_str(&op.rhs_type)),
+                        SymbolType::from_str(&op.return_type),
                     )
                 })
                 .collect::<HashMap<_, _>>();
@@ -88,15 +90,17 @@ impl TypeDatabase {
             let unary_operators = class
                 .unary_operators
                 .into_iter()
-                .map(|op| (op.operator, SymbolType::from_str(&op.return_type).unwrap()))
+                .map(|op| (op.operator, SymbolType::from_str(&op.return_type)))
                 .collect::<HashMap<_, _>>();
 
-            classes.insert(
-                class_name.clone(),
+            let class_sym_type = SymbolType::from_str(&class_name);
+            let class_parent_sym_type = class.parent.map(|p| SymbolType::from_str(&p));
+            db.classes.insert(
+                class_sym_type,
                 ClassInfo {
                     methods,
                     properties,
-                    parent: class.parent,
+                    parent: class_parent_sym_type,
                     constructors,
                     constants,
                     binary_operators,
@@ -104,22 +108,22 @@ impl TypeDatabase {
                 },
             );
         }
-        Some(Self { classes })
+        Some(db)
     }
 
-    pub fn get_symbol_type(&self, class: &str, symbol: &str) -> Option<&SymbolType> {
+    pub fn get_property_type(&self, class: &SymbolType, symbol: &str) -> Option<&SymbolType> {
         if let Some(class) = self.classes.get(class) {
             if let Some(prop) = class.properties.get(symbol) {
                 return Some(&prop.ttype);
             }
             if let Some(parent_class) = &class.parent {
-                return self.get_symbol_type(parent_class, symbol);
+                return self.get_property_type(parent_class, symbol);
             }
         }
         None
     }
 
-    pub fn get_callable(&self, class: &str, callable: &str) -> Option<&MethodInfo> {
+    pub fn get_callable(&self, class: &SymbolType, callable: &str) -> Option<&MethodInfo> {
         if let Some(class) = self.classes.get(class) {
             if let Some(prop) = class.methods.get(callable) {
                 return Some(prop);
@@ -128,22 +132,23 @@ impl TypeDatabase {
                 return self.get_callable(parent_class, callable);
             }
         }
-        if class != "@GlobalScope" {
-            self.get_callable("@GlobalScope", callable)
+        let global_scope_type = SymbolType::Object("@GlobalScope".to_string());
+        if class != &global_scope_type {
+            self.get_callable(&global_scope_type, callable)
         } else {
             None
         }
     }
 
     // Get callable return type in specified class or its ancestors or in @GlobalScope
-    pub fn get_callable_type(&self, class: &str, callable: &str) -> Option<&SymbolType> {
+    pub fn get_callable_type(&self, class: &SymbolType, callable: &str) -> Option<&SymbolType> {
         self.get_callable(class, callable)
             .map(|method| &method.return_type)
     }
 
     pub fn get_binary_operator_type(
         &self,
-        class: &str,
+        class: &SymbolType,
         op: &str,
         rhs: SymbolType,
     ) -> Option<&SymbolType> {
@@ -151,8 +156,12 @@ impl TypeDatabase {
         cls.binary_operators.get(&(op.to_string(), rhs))
     }
 
-    pub fn get_unary_operator_type(&self, inner_type_str: &str, op: &str) -> Option<&SymbolType> {
-        let cls = self.classes.get(inner_type_str)?;
+    pub fn get_unary_operator_type(
+        &self,
+        inner_type: &SymbolType,
+        op: &str,
+    ) -> Option<&SymbolType> {
+        let cls = self.classes.get(inner_type)?;
         cls.unary_operators.get(op)
     }
 }
@@ -161,7 +170,7 @@ impl TypeDatabase {
 pub struct ClassInfo {
     pub methods: HashMap<String, MethodInfo>,
     pub properties: HashMap<String, PropertyInfo>,
-    pub parent: Option<String>,
+    pub parent: Option<SymbolType>,
     pub constructors: Vec<Constructor>,
     pub constants: HashMap<String, Constant>,
     pub binary_operators: HashMap<(String, SymbolType), SymbolType>,
@@ -291,21 +300,19 @@ impl ToString for SymbolType {
     }
 }
 
-impl FromStr for SymbolType {
-    type Err = strum::ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl SymbolType {
+    pub fn from_str(s: &str) -> Self {
         if let Some(array_element_type) = s.strip_suffix("[]") {
             match VariantType::from_str(array_element_type) {
-                Ok(v) => Ok(Self::Array(v)),
+                Ok(v) => Self::Array(v),
                 Err(strum::ParseError::VariantNotFound) => {
-                    Ok(Self::OjbectArray(array_element_type.to_string()))
+                    Self::OjbectArray(array_element_type.to_string())
                 }
             }
         } else {
             match VariantType::from_str(s) {
-                Ok(v) => Ok(Self::Variant(v)),
-                Err(strum::ParseError::VariantNotFound) => Ok(Self::Object(s.to_string())),
+                Ok(v) => Self::Variant(v),
+                Err(strum::ParseError::VariantNotFound) => Self::Object(s.to_string()),
             }
         }
     }
@@ -447,14 +454,20 @@ mod tests {
 
     #[test]
     fn noded_transform_parses_as_varianttype_transformd() {
-        let cls = TEST_TYPEDB.classes.get("Node3D").unwrap();
+        let cls = TEST_TYPEDB
+            .classes
+            .get(&SymbolType::Object("Node3D".to_string()))
+            .unwrap();
         let transform = cls.properties.get("transform").unwrap();
         assert_eq!(
             transform.ttype,
             SymbolType::Variant(VariantType::Transform3d)
         );
 
-        let cls = TEST_TYPEDB.classes.get("Node2D").unwrap();
+        let cls = TEST_TYPEDB
+            .classes
+            .get(&SymbolType::Object("Node2D".to_string()))
+            .unwrap();
         let transform = cls.properties.get("transform").unwrap();
         assert_eq!(
             transform.ttype,

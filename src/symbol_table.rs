@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
 use async_lsp::lsp_types::{InlayHintKind, Position};
 use tree_sitter::{Node, Tree};
@@ -81,7 +81,7 @@ impl<'a> SymbolTable<'a> {
                     let mut static_typed = false;
                     let mut ttype = None;
                     if let Some(type_node) = type_node {
-                        ttype = SymbolType::from_str(node_content(&type_node, file)).ok();
+                        ttype = Some(SymbolType::from_str(node_content(&type_node, file)));
                         static_typed = true;
                     } else if let Some(value_node) = value_node {
                         ttype = self.infer_type(current_scope_id, value_node, file)
@@ -115,7 +115,7 @@ impl<'a> SymbolTable<'a> {
                                 let mut ttype = None;
                                 if let Some(type_node) = type_node {
                                     ttype =
-                                        SymbolType::from_str(node_content(&type_node, file)).ok();
+                                        Some(SymbolType::from_str(node_content(&type_node, file)));
                                 }
                                 let symbol = Symbol {
                                     name: name.to_string(),
@@ -155,7 +155,7 @@ impl<'a> SymbolTable<'a> {
                     let type_node = child.child(1);
                     let mut ttype = None;
                     if let Some(type_node) = type_node {
-                        ttype = SymbolType::from_str(node_content(&type_node, file)).ok();
+                        ttype = Some(SymbolType::from_str(node_content(&type_node, file)));
                     }
                     self.class_parent = ttype;
                 }
@@ -216,13 +216,13 @@ impl<'a> SymbolTable<'a> {
             is_class = false;
             let paren_expr_type =
                 self.infer_parenthesized_expression_type(scope_id, lhs_node, file)?;
-            self.typedb.classes.get(&paren_expr_type.to_string())?
+            self.typedb.classes.get(&paren_expr_type)?
         } else if let Some(ttype) = self.get_symbol_type(scope_id, name, lhs_node.start_byte()) {
             is_class = false;
-            self.typedb.classes.get(&ttype.to_string())?
+            self.typedb.classes.get(ttype)?
         } else {
             is_class = true;
-            self.typedb.classes.get(name)?
+            self.typedb.classes.get(&SymbolType::from_str(name))?
         };
         let attribute_node = node.child(2).unwrap();
         match attribute_node.kind() {
@@ -264,11 +264,10 @@ impl<'a> SymbolTable<'a> {
         let right_node = bin_op.child_by_field_name("right").unwrap();
         let left_type = self.infer_type(scope_id, left_node, file)?;
         let right_type = self.infer_type(scope_id, right_node, file)?;
-        let left_type_str = left_type.to_string();
         // TODO: should we use `node_content` instead of relying on the fact that kind is equal to operator character ?
         let op = bin_op.child(1)?.kind();
         self.typedb
-            .get_binary_operator_type(&left_type_str, op, right_type)
+            .get_binary_operator_type(&left_type, op, right_type)
             .cloned()
     }
 
@@ -280,8 +279,7 @@ impl<'a> SymbolTable<'a> {
     ) -> Option<&SymbolType> {
         if scope == 0 {
             if let Some(parent) = &self.class_parent {
-                let type_string = parent.to_string();
-                return self.typedb.get_symbol_type(&type_string, symbol);
+                return self.typedb.get_property_type(parent, symbol);
             }
         }
         let scope = self.map.get(&scope)?;
@@ -313,7 +311,7 @@ impl<'a> SymbolTable<'a> {
 
         // If function names is equal to the name of one of the registered classes
         // then get constructor's return type
-        if let Some(class) = self.typedb.classes.get(name) {
+        if let Some(class) = self.typedb.classes.get(&SymbolType::from_str(name)) {
             if let Some(arguments) = node.child_by_field_name("arguments") {
                 let argument_types = arguments
                     .named_children(&mut arguments.walk())
@@ -330,8 +328,7 @@ impl<'a> SymbolTable<'a> {
 
         // TODO: get local defined methods first
         if let Some(parent) = &self.class_parent {
-            let type_string = parent.to_string();
-            let callable = self.typedb.get_callable(&type_string, name);
+            let callable = self.typedb.get_callable(parent, name);
             if let Some(callable) = callable {
                 if let Some(arguments) = node.child_by_field_name("arguments") {
                     self.add_parameter_hints(scope_id, arguments, callable);
@@ -368,7 +365,9 @@ impl<'a> SymbolTable<'a> {
                 ttype: None,
                 kind: InlayHintKind::PARAMETER,
             };
-            self.map.get_mut(&scope_id).unwrap().vars.push(symbol);
+            if let Some(scope) = self.map.get_mut(&scope_id) {
+                scope.vars.push(symbol);
+            }
         }
     }
 
@@ -390,10 +389,9 @@ impl<'a> SymbolTable<'a> {
     ) -> Option<SymbolType> {
         let inner_expression = node.child(1)?;
         let inner_type = self.infer_type(scope_id, inner_expression, file)?;
-        let inner_type_str = inner_type.to_string();
         let op = node.child(0)?.kind();
         self.typedb
-            .get_unary_operator_type(&inner_type_str, op)
+            .get_unary_operator_type(&inner_type, op)
             .cloned()
     }
 }
